@@ -24,12 +24,38 @@ Desktop-AutoGLM 是一个基于 [Open-AutoGLM](https://github.com/zai-org/Open-A
 
 ## 使用方法
 
-设置你的 API 密钥：
-```bash
-export OPENAI_API_KEY="your-api-key"
-```
+### 1. 配置 API 密钥
 
-运行程序：
+你可以通过以下三种方式配置 API 密钥：
+
+- **方式一：使用 `config.json` (推荐)**
+  在项目根目录下创建或修改 `config.json`：
+  ```json
+  {
+      "providers": [
+          {
+              "name": "OpenAI",
+              "base_url": "https://api.openai.com/v1",
+              "api_key": "你的 API 密钥",
+              "model": "gpt-4o"
+          }
+      ],
+      "default_provider": "OpenAI"
+  }
+  ```
+
+- **方式二：环境变量**
+  ```bash
+  export OPENAI_API_KEY="your-api-key"
+  ```
+
+- **方式三：命令行参数**
+  ```bash
+  python main.py --api-key "your-api-key" "任务描述"
+  ```
+
+### 2. 运行程序
+
 ```bash
 python main.py "在浏览器中搜索最新的 AI 新闻并总结"
 ```
@@ -37,9 +63,10 @@ python main.py "在浏览器中搜索最新的 AI 新闻并总结"
 ### 参数说明
 
 - `task`: 要执行的任务描述。
-- `--model`: 使用的模型名称（默认: `gpt-4o`）。
-- `--base-url`: API 基础地址（默认: `https://api.openai.com/v1`）。
-- `--api-key`: API 密钥（也可以通过环境变量设置）。
+- `--provider`: 使用的提供商名称（对应 `config.json` 中的 `name`）。
+- `--model`: 使用的模型名称。
+- `--base-url`: API 基础地址。
+- `--api-key`: API 密钥。
 
 ## 可用操作
 
