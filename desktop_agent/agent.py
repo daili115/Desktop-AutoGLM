@@ -1,5 +1,6 @@
 import os
 import json
+import re
 from typing import Optional, List, Dict, Any
 from .model.client import ModelClient, ModelConfig, MessageBuilder
 from .executor.controller import DesktopController
@@ -32,26 +33,33 @@ class DesktopAgent:
             
             # 1. 获取当前屏幕截图
             screenshot_path = "current_screen.png"
-            self.controller.get_screenshot(screenshot_path)
+            try:
+                self.controller.get_screenshot(screenshot_path)
+            except Exception as e:
+                print(f"截图失败: {e}")
+                # 在某些无头环境下可能会失败，这里记录但不中断
             
             # 2. 构建消息
             user_msg = f"当前任务: {task}\n请根据当前屏幕截图决定下一步操作。"
             if step == 0:
-                self.history.append(MessageBuilder.create_user_message(user_msg, screenshot_path))
+                self.history.append(MessageBuilder.create_user_message(user_msg, screenshot_path if os.path.exists(screenshot_path) else None))
             else:
-                # 为了节省上下文，可以只保留最近几张图，或者只传文字描述
-                self.history.append(MessageBuilder.create_user_message("下一步？", screenshot_path))
+                self.history.append(MessageBuilder.create_user_message("下一步？", screenshot_path if os.path.exists(screenshot_path) else None))
             
             # 3. 请求模型
-            response = self.model_client.request(self.history)
-            print(f"思考: {response.thinking}")
-            print(f"动作: {response.action}")
-            
-            self.history.append({"role": "assistant", "content": response.raw_content})
+            try:
+                response = self.model_client.request(self.history)
+                print(f"思考: {response.thinking}")
+                print(f"动作: {response.action}")
+                self.history.append({"role": "assistant", "content": response.raw_content})
+            except Exception as e:
+                print(f"模型请求失败: {e}")
+                return f"Error: {e}"
             
             # 4. 执行动作
             if "finish(" in response.action:
-                message = response.action.split('message="')[1].split('"')[0]
+                match = re.search(r'finish\(message=["\'](.*?)["\']\)', response.action)
+                message = match.group(1) if match else "任务完成"
                 print(f"任务完成: {message}")
                 return message
             
@@ -65,30 +73,32 @@ class DesktopAgent:
         return "Failed to complete task within max steps."
 
     def _execute_action(self, action_str: str):
-        # 简单的解析逻辑，实际应用中可以使用更严谨的解析
-        if "action=\"Tap\"" in action_str:
-            x = int(action_str.split("x=")[1].split(",")[0])
-            y = int(action_str.split("y=")[1].split(")")[0])
-            self.controller.tap(x, y)
-        elif "action=\"DoubleTap\"" in action_str:
-            x = int(action_str.split("x=")[1].split(",")[0])
-            y = int(action_str.split("y=")[1].split(")")[0])
-            self.controller.double_tap(x, y)
-        elif "action=\"Type\"" in action_str:
-            text = action_str.split('text="')[1].split('"')[0]
-            self.controller.type_text(text)
-        elif "action=\"Press\"" in action_str:
-            key = action_str.split('key="')[1].split('"')[0]
-            self.controller.press_key(key)
-        elif "action=\"Scroll\"" in action_str:
-            clicks = int(action_str.split("clicks=")[1].split(")")[0])
-            self.controller.scroll(clicks)
-        elif "action=\"Wait\"" in action_str:
-            seconds = float(action_str.split("seconds=")[1].split(")")[0])
-            self.controller.wait(seconds)
-        elif "action=\"Drag\"" in action_str:
-            x1 = int(action_str.split("x1=")[1].split(",")[0])
-            y1 = int(action_str.split("y1=")[1].split(",")[0])
-            x2 = int(action_str.split("x2=")[1].split(",")[0])
-            y2 = int(action_str.split("y2=")[1].split(")")[0])
-            self.controller.drag(x1, y1, x2, y2)
+        # 使用正则表达式进行更健壮的解析
+        if "action=\"Tap\"" in action_str or "action='Tap'" in action_str:
+            match = re.search(r'x=(\d+),\s*y=(\d+)', action_str)
+            if match:
+                self.controller.tap(int(match.group(1)), int(match.group(2)))
+        elif "action=\"DoubleTap\"" in action_str or "action='DoubleTap'" in action_str:
+            match = re.search(r'x=(\d+),\s*y=(\d+)', action_str)
+            if match:
+                self.controller.double_tap(int(match.group(1)), int(match.group(2)))
+        elif "action=\"Type\"" in action_str or "action='Type'" in action_str:
+            match = re.search(r'text=["\'](.*?)["\']', action_str)
+            if match:
+                self.controller.type_text(match.group(1))
+        elif "action=\"Press\"" in action_str or "action='Press'" in action_str:
+            match = re.search(r'key=["\'](.*?)["\']', action_str)
+            if match:
+                self.controller.press_key(match.group(1))
+        elif "action=\"Scroll\"" in action_str or "action='Scroll'" in action_str:
+            match = re.search(r'clicks=(-?\d+)', action_str)
+            if match:
+                self.controller.scroll(int(match.group(1)))
+        elif "action=\"Wait\"" in action_str or "action='Wait'" in action_str:
+            match = re.search(r'seconds=(\d+\.?\d*)', action_str)
+            if match:
+                self.controller.wait(float(match.group(1)))
+        elif "action=\"Drag\"" in action_str or "action='Drag'" in action_str:
+            match = re.search(r'x1=(\d+),\s*y1=(\d+),\s*x2=(\d+),\s*y2=(\d+)', action_str)
+            if match:
+                self.controller.drag(int(match.group(1)), int(match.group(2)), int(match.group(3)), int(match.group(4)))
